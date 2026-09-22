@@ -1,0 +1,14 @@
+# Local credentials and runtime state
+config.json
+config.yaml
+data/
+.local/
+session.json
+*.key
+*.pem
+
+# Build outputs and downloaded tools
+.gocache/
+dist/
+*.exe
+tools/mihomo/*.zip

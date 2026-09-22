@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>betterNJUVPN · 南京大学 Web VPN</title>
+<style>
+:root{--blue:#0878f9;--ink:#171b22;--muted:#7e858f;--line:#e5e9ef;--bg:#f4f6f8;--green:#0c9250;--red:#d94949}
+*{box-sizing:border-box}body{margin:0;min-width:680px;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei UI","Segoe UI",sans-serif}button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.52}
+.shell{max-width:1120px;margin:auto;padding:22px 24px 28px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px}.brand{display:flex;align-items:center;gap:12px}.brand-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--blue);color:white;font-size:21px;font-weight:750}.brand strong{display:block;font-size:18px}.brand small{display:block;margin-top:2px;font-size:11px;color:var(--muted)}
+.status{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:99px;background:white;border:1px solid var(--line);font-size:12px}.dot{width:9px;height:9px;border-radius:50%;background:#adb5bf}.dot.ok{background:var(--green);box-shadow:0 0 0 3px #dff5e9}.dot.busy{background:#e7a33d}.dot.err{background:var(--red)}
+.account,.panel{background:white;border:1px solid #e9edf2;border-radius:14px;box-shadow:0 3px 14px rgba(19,38,61,.035)}.account{padding:17px 20px;margin-bottom:17px}.account-head,.account-online{display:flex;align-items:center;justify-content:space-between;gap:15px}.account-title{font-size:14px;font-weight:700}.account-sub{font-size:12px;color:var(--muted);margin-top:4px}.login-fields{display:grid;grid-template-columns:minmax(130px,1fr) minmax(160px,1fr) auto;align-items:end;gap:10px;margin-top:14px}.field label{display:block;margin-bottom:5px;color:#59616b;font-size:11px}.field input{width:100%;height:38px;border:1px solid #d9dfe7;border-radius:8px;padding:0 11px;font-size:13px}.field input:focus{outline:2px solid #c5e0ff;border-color:var(--blue)}
+.primary{height:38px;border:0;border-radius:8px;padding:0 20px;background:var(--blue);color:white;font-size:13px;font-weight:700}.primary:hover{background:#0665d7}.outline{height:34px;padding:0 14px;border:1px solid #ced7e2;border-radius:8px;background:white;color:#2d3744;font-size:12px}.outline:hover{border-color:var(--blue);color:var(--blue)}.outline.blue{border-color:#b5d6ff;color:var(--blue)}.remember{display:inline-flex;align-items:center;gap:7px;margin-top:11px;font-size:12px;color:#626a76;cursor:pointer}.remember input{width:15px;height:15px;accent-color:var(--blue)}.account-online{display:none;margin-top:12px}.account-online span{color:#5f6874;font-size:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{min-height:307px;overflow:hidden}.panel-title{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line);font-size:19px;font-weight:700}.panel-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:11px;background:#e7f1ff;color:var(--blue);font-size:21px}.panel-body{padding:17px 20px 20px}.tabs{display:flex;gap:10px}.tab{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;height:48px;border:0;border-radius:9px;background:#f3f4f6;color:#1d232b;font-size:14px;white-space:nowrap}.tab.selected{background:var(--blue);color:white;font-weight:700}.tab.disabled{opacity:.52;cursor:not-allowed}.tab .icon{font-size:18px}.note{display:grid;place-items:center;min-height:48px;margin-top:11px;padding:8px 13px;border:1px solid #bdd7ff;border-radius:8px;color:#7e8791;text-align:center;font-size:12px;line-height:1.5}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:12px 14px;border-radius:10px;background:#eef9f8}.setting-left{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px}.play-icon{display:grid;place-items:center;width:24px;height:24px;border:2px solid var(--green);border-radius:50%;color:var(--green);font-size:12px}.switch{width:54px;height:30px;border:0;border-radius:20px;background:#c6cbd2;padding:3px}.switch span{display:block;width:24px;height:24px;border-radius:50%;background:white;box-shadow:0 1px 4px #0002;transition:transform .15s}.switch.on{background:var(--blue)}.switch.on span{transform:translateX(24px)}.port-row{display:flex;align-items:center;gap:10px;margin-top:15px;font-size:12px;color:#65707c}.port-row input{width:82px;height:34px;padding:0 8px;border:1px solid #d6dee8;border-radius:7px;text-align:center}.port-row .outline{margin-left:auto}.mode-note{margin-top:23px}.detail{margin-top:13px;color:#8b929c;font-size:11px;line-height:1.65}.error{display:none;margin-top:12px;padding:10px 12px;background:#fff0f0;color:#ae3333;border-radius:8px;font-size:12px}.footer{margin-top:15px;color:#9ba3ad;text-align:center;font-size:11px}
+.mask{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#14233377}.mask.show{display:flex}.modal{width:330px;max-width:90vw;background:white;border-radius:14px;padding:22px;box-shadow:0 12px 35px #0003}.modal h3{margin:0 0 8px;font-size:18px}.modal p{color:#69737e;font-size:12px;line-height:1.6}.modal input{width:100%;height:44px;border:1px solid #d6dee8;border-radius:8px;padding:0 12px;font-size:20px;text-align:center;letter-spacing:6px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}
+@media(max-width:800px){.shell{padding:16px}.grid{grid-template-columns:1fr}.login-fields{grid-template-columns:1fr 1fr}.login-fields button{grid-column:1/-1}}
+.traffic{display:flex;justify-content:center;flex-wrap:wrap;gap:8px 22px;margin-top:15px;padding:13px 16px;background:white;border:1px solid var(--line);border-radius:10px;color:#475362;font-size:12px}.traffic strong{color:var(--ink);font-variant-numeric:tabular-nums}.traffic small{width:100%;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<main class="shell">
+  <div class="top"><div class="brand"><div class="brand-icon">N</div><div><strong>betterNJUVPN</strong><small>南京大学 Web VPN · 本地代理</small></div></div><div class="status"><span class="dot" id="dot"></span><span id="statusText">未连接</span></div></div>
+  <section class="account">
+    <div class="account-head"><div><div class="account-title">校园网账户</div><div class="account-sub" id="statusSub">已有会话会自动恢复；重新登录需手动确认</div></div><button class="outline" onclick="doQuit()">退出程序</button></div>
+    <div id="loginArea"><div class="login-fields"><div class="field"><label for="username">学号</label><input id="username" autocomplete="username" placeholder="学号"></div><div class="field"><label for="password">统一身份认证密码</label><input id="password" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button class="primary" id="loginBtn" onclick="doLogin(false)">登录</button><button class="outline" id="smsOpenBtn" onclick="showSms(state?.phone)" style="display:none">输入短信码</button></div><label class="remember"><input type="checkbox" id="rememberPassword">保存密码到本机配置文件</label></div>
+    <div class="account-online" id="onlineArea"><span id="accountName">已登录</span><button class="outline blue" id="logoutBtn" onclick="doLogout()">退出登录</button></div>
+    <div class="error" id="error"></div>
+  </section>
+  <div class="grid">
+    <section class="panel"><div class="panel-title"><span class="panel-icon">▤</span>网络设置</div><div class="panel-body">
+      <div class="tabs"><button class="tab selected" id="systemTab" onclick="selectNetworkMode('system')"><span class="icon">▣</span>系统代理</button><button class="tab" id="tunTab" onclick="selectNetworkMode('tun')"><span class="icon">◉</span>虚拟网卡</button></div>
+      <div class="note" id="networkNote">系统代理供浏览器使用；虚拟网卡接管设备流量并按规则分流</div>
+      <div class="setting-row"><div class="setting-left"><span class="play-icon">▶</span><span id="networkToggleLabel">系统代理</span></div><button class="switch" id="networkToggle" role="switch" aria-label="系统代理" aria-checked="false" onclick="toggleActiveNetwork()"><span></span></button></div>
+      <div class="port-row"><span>本地端口</span><input id="proxyPort" type="number" min="1" max="65535" value="7899"><button class="outline" onclick="saveSettings()">保存端口</button></div>
+      <div class="detail">虚拟网卡全局接管流量；南大网页经本地代理，其余流量直连。校内 IP 与非 Web 端口不经学校网关。</div>
+    </div></section>
+    <section class="panel"><div class="panel-title"><span class="panel-icon">▣</span>代理模式</div><div class="panel-body">
+      <div class="tabs"><button class="tab" id="modeRule" onclick="setMode('rule')"><span class="icon">↔</span>规则</button><button class="tab" id="modeGlobal" onclick="setMode('global')"><span class="icon">◎</span>全局</button><button class="tab" id="modeDirect" onclick="setMode('direct')"><span class="icon">◆</span>直连</button></div>
+      <div class="note mode-note" id="modeNote">南大域名使用本地代理，其他地址直连</div>
+      <div class="detail">“全局”表示所有浏览器 HTTP(S) 请求进入本地代理；非校内地址仍由本机直连。当前仅支持学校 Web 网关允许的资源。</div>
+    </div></section>
+  </div>
+  <div class="traffic" aria-label="本地代理流量"><span>↑ 实时上传 <strong id="uploadSpeed">0 B/s</strong></span><span>↓ 实时下载 <strong id="downloadSpeed">0 B/s</strong></span><span>累计上传 <strong id="uploadTotal">0 B</strong></span><span>累计下载 <strong id="downloadTotal">0 B</strong></span><small>统计本次程序运行期间经过本地代理的流量；虚拟网卡直连流量不计入</small></div>
+  <div class="footer">关闭窗口即退出并恢复原系统代理设置 · 浏览器需信任本地 CA</div>
+</main>
+<div class="mask" id="smsMask"><div class="modal"><h3>短信验证</h3><p>学校网关已接受发送请求，绑定号码：<strong id="phone">查询中</strong>。短信可能延迟；未收到时可在 60 秒后手动重发。</p><input id="smsCode" maxlength="6" inputmode="numeric" placeholder="验证码"><div class="modal-actions"><button class="outline" onclick="resendSms()">重发短信</button><button class="outline" onclick="closeSms()">稍后输入</button><button class="primary" onclick="doSms()">确认</button></div></div></div>
+<script>
+let state=null,autoTried=false,initialised=false,lastState="",networkMode="system";
+let trafficSample=null;
+const $=id=>document.getElementById(id);
+function formatBytes(n){if(n<1024)return Math.round(n)+" B";const units=["KB","MB","GB","TB"];let i=-1;do{n/=1024;i++}while(n>=1024&&i<units.length-1);return n.toFixed(n>=100?0:n>=10?1:2)+" "+units[i]}
+function renderTraffic(s){const now=performance.now(),up=Number(s.uploadBytes)||0,down=Number(s.downloadBytes)||0;$("uploadTotal").textContent=formatBytes(up);$("downloadTotal").textContent=formatBytes(down);if(!trafficSample||up<trafficSample.up||down<trafficSample.down){trafficSample={now,up,down};return}const seconds=(now-trafficSample.now)/1000;if(seconds<0.9)return;$("uploadSpeed").textContent=formatBytes(Math.max(0,(up-trafficSample.up)/seconds))+"/s";$("downloadSpeed").textContent=formatBytes(Math.max(0,(down-trafficSample.down)/seconds))+"/s";trafficSample={now,up,down}}
+const modeText={rule:"南大域名使用本地代理，其他地址直连",global:"所有浏览器 HTTP(S) 请求进入本地代理；校外网站由本机直连",direct:"浏览器直连；本地代理仍可供手动指定的程序使用"};
+function render(s){
+  state=s;
+  renderTraffic(s);
+  if(!initialised){$("username").value=s.loginUsername||"";$("rememberPassword").checked=!!s.rememberPassword;networkMode=s.tunOn?"tun":"system";initialised=true}
+  if(document.activeElement!==$("proxyPort"))$("proxyPort").value=(s.proxyAddr||"127.0.0.1:7899").split(":").pop();
+  const online=s.state==="online";
+  $("dot").className="dot"+(online?" ok":s.state==="error"?" err":["logging_in","sms_pending","submitting_sms"].includes(s.state)?" busy":"");
+  $("statusText").textContent=online?(s.proxyOn?"已连接 · 代理运行中":"已连接 · 代理已暂停"):({logging_in:"正在登录",sms_pending:"等待短信验证码",submitting_sms:"正在验证",error:"连接失败"}[s.state]||"未连接");
+  $("statusSub").textContent=s.message||(online?"Web 网关会话已建立":"已有会话会自动恢复；重新登录需手动确认");
+  $("loginArea").style.display=online?"none":"block";$("onlineArea").style.display=online?"flex":"none";
+  $("accountName").textContent="账号 "+(s.username||"")+" · "+(s.proxyAddr||"");
+  $("loginBtn").disabled=["logging_in","sms_pending","submitting_sms"].includes(s.state);
+  $("smsOpenBtn").style.display=s.state==="sms_pending"?"inline-block":"none";
+  $("error").style.display=s.message&&(s.state==="error"||s.message.includes("失败"))?"block":"none";$("error").textContent=s.message||"";
+  const tunSelected=networkMode==="tun",activeOn=tunSelected?!!s.tunOn:!!s.systemProxyOn;
+  $("networkToggleLabel").textContent=tunSelected?"虚拟网卡":"系统代理";
+  $("networkToggle").setAttribute("aria-label",tunSelected?"虚拟网卡":"系统代理");
+  $("networkToggle").classList.toggle("on",activeOn);$("networkToggle").setAttribute("aria-checked",activeOn);
+  $("networkToggle").disabled=!!s.tunBusy||(tunSelected&&!s.tunAvailable&&!s.tunOn);
+  $("systemTab").classList.toggle("selected",!tunSelected);$("tunTab").classList.toggle("selected",tunSelected);
+  $("networkNote").textContent=tunSelected?(s.tunBusy?s.message:(s.tunOn?"虚拟网卡运行中：南大网页经本地代理，其余流量直连":!s.tunAvailable?"虚拟网卡需要管理员权限，请以管理员身份重新启动程序":"虚拟网卡全局接管流量并按规则分流")):(s.systemProxyOn?"浏览器系统代理已开启":"系统代理供浏览器使用");
+  for(const [name,id] of [["rule","modeRule"],["global","modeGlobal"],["direct","modeDirect"]])$(id).classList.toggle("selected",s.proxyMode===name);
+  $("modeNote").textContent=modeText[s.proxyMode]||modeText.rule;
+  if(s.state==="sms_pending"&&lastState!=="sms_pending")showSms(s.phone);lastState=s.state;
+}
+async function api(path,body){const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"操作失败");return data}
+function showError(error){$("error").textContent=error.message||String(error);$("error").style.display="block"}
+async function poll(){try{const response=await fetch("/api/status",{cache:"no-store"});const s=await response.json();render(s);if(!autoTried&&s.state==="idle"){autoTried=true;await doLogin(true)}}catch(error){showError(error)}}
+async function doLogin(auto){const username=$("username").value.trim(),password=$("password").value;if(!auto&&(!username||(!password&&!state?.hasPassword))){showError(new Error("请填写学号和密码"));return}try{await api("/api/login",{username,password,rememberPassword:$("rememberPassword").checked,auto})}catch(error){showError(error)}}
+async function doSms(){const code=$("smsCode").value.trim();if(!code)return;try{await api("/api/sms",{code});closeSms()}catch(error){showError(error)}}
+async function resendSms(){try{await api("/api/sms/resend",{});await poll()}catch(error){showError(error)}}
+function showSms(phone){$("phone").textContent=phone||"绑定手机";$("smsMask").classList.add("show");$("smsCode").value="";$("smsCode").focus()}
+function closeSms(){$("smsMask").classList.remove("show")}
+async function doLogout(){try{await api("/api/logout",{});$("password").value="";await poll()}catch(error){showError(error)}}
+async function toggleTun(){if(state?.tunBusy)return;try{await api("/api/tun",{action:state.tunOn?"stop":"start"});await poll()}catch(error){showError(error)}}
+function selectNetworkMode(mode){networkMode=mode;if(state)render(state)}
+function toggleActiveNetwork(){if(networkMode==="tun")toggleTun();else toggleSystem()}
+let settingsBusy=false;
+async function applySettings(systemOn,mode,port){if(settingsBusy)return;settingsBusy=true;try{await api("/api/settings",{port:Number(port),systemProxyOn:systemOn,proxyMode:mode});await poll()}catch(error){showError(error)}finally{settingsBusy=false}}
+function toggleSystem(){applySettings(!state.systemProxyOn,state.proxyMode,$("proxyPort").value)}
+function setMode(mode){applySettings(state.systemProxyOn,mode,$("proxyPort").value)}
+function saveSettings(){applySettings(state.systemProxyOn,state.proxyMode,$("proxyPort").value)}
+async function doQuit(){try{await api("/api/quit",{});setTimeout(()=>window.close(),250)}catch(error){showError(error)}}
+$("password").addEventListener("keydown",event=>{if(event.key==="Enter")doLogin(false)});$("smsCode").addEventListener("keydown",event=>{if(event.key==="Enter")doSms()});
+setInterval(poll,350);poll();
+</script>
+</body>
+</html>
