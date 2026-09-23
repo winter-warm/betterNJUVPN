@@ -12,7 +12,7 @@ import (
 
 func TestTunConfigIsGlobalAndValid(t *testing.T) {
 	cfg := tunConfig(7899, 38171, strings.Repeat("a", 64))
-	for _, want := range []string{"device: njuConnectTun", "route-address:\n    - 0.0.0.0/1\n    - 128.0.0.0/1\n    - ::/1\n    - 8000::/1", "dns-hijack:\n    - any:53\n    - tcp://any:53", "fake-ip-range: 198.19.0.1/16", "port: 7899", "DOMAIN-SUFFIX,nju.edu.cn,NJU-Web", "MATCH,DIRECT"} {
+	for _, want := range []string{"device: njuConnectTun", "stack: system", "route-address:\n    - 0.0.0.0/1\n    - 128.0.0.0/1\n    - ::/1\n    - 8000::/1", "dns-hijack:\n    - any:53\n    - tcp://any:53", "fake-ip-range: 198.19.0.1/16", "port: 7899", "DOMAIN-SUFFIX,nju.edu.cn,NJU-Web", "MATCH,DIRECT"} {
 		if !strings.Contains(cfg, want) {
 			t.Fatalf("missing %q", want)
 		}

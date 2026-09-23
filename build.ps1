@@ -2,12 +2,13 @@
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $env:GOCACHE = Join-Path $root '.gocache'
-$distRoot = Join-Path $root 'dist'
+$distRoot = Join-Path $root 'dist\portable'
 $package = Join-Path $distRoot 'betterNJUVPN'
 $stage = Join-Path $distRoot ('.stage-' + [guid]::NewGuid().ToString('N'))
 
 Push-Location $root
 try {
+    New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $stage 'tools\mihomo'), (Join-Path $stage 'assets') -Force | Out-Null
     & go build -ldflags '-H=windowsgui' -o (Join-Path $stage 'betterNJUVPN.exe') .
     if ($LASTEXITCODE -ne 0) { throw 'GUI 构建失败' }
@@ -19,7 +20,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'assets\betterNJUVPN.ico') -Destination (Join-Path $stage 'assets')
 
     if (Test-Path -LiteralPath $package) {
-        if ([IO.Path]::GetFullPath($package) -ne [IO.Path]::GetFullPath((Join-Path $root 'dist\betterNJUVPN'))) { throw '分发目录路径异常' }
+        if ([IO.Path]::GetFullPath($package) -ne [IO.Path]::GetFullPath((Join-Path $root 'dist\portable\betterNJUVPN'))) { throw '分发目录路径异常' }
         $privateItems = @('config.json', 'data') | Where-Object { Test-Path -LiteralPath (Join-Path $package $_) }
         if ($privateItems.Count -gt 0) {
             $backup = Join-Path $root ('.local\previous-package-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))

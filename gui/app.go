@@ -34,6 +34,7 @@ const (
 
 type App struct {
 	mu            sync.Mutex
+	authMu        sync.Mutex // Serializes login, SMS and logout, including background work.
 	state         State
 	message       string // 给 UI 的提示（含错误）
 	phoneMasked   string // 短信弹窗展示的掩码手机号
@@ -52,6 +53,7 @@ type App struct {
 	tun           *tunManager
 	tunBusy       bool
 	traffic       trafficCounters
+	caTrusted     bool
 }
 
 func NewApp(cfg *core.Config) (*App, error) {
@@ -59,10 +61,14 @@ func NewApp(cfg *core.Config) (*App, error) {
 	if err := manager.Restore(); err != nil {
 		return nil, fmt.Errorf("恢复上次系统代理设置失败: %w", err)
 	}
+	if err := manager.ClearStaleOwnProxy(cfg.ListenProxy); err != nil {
+		return nil, fmt.Errorf("清理失效代理设置失败: %w", err)
+	}
 	a := &App{state: StateIdle, cfg: cfg, proxyAddr: cfg.ListenProxy, proxyMode: cfg.ProxyMode, systemProxyOn: cfg.SystemProxy == "on", systemProxy: manager, tun: newTunManager()}
 	a.username = maskUser(cfg.Username)
 	_ = os.MkdirAll(cfg.DataDir, 0700)
 	a.sessionFile = filepath.Join(cfg.DataDir, "session.json")
+	a.caTrusted = localCATrusted(cfg.DataDir)
 	return a, nil
 }
 
@@ -93,6 +99,7 @@ func (a *App) snapshot() map[string]interface{} {
 		"hasPassword":      a.cfg.RememberPassword && a.cfg.Password != "",
 		"uploadBytes":      a.traffic.upload.Load(),
 		"downloadBytes":    a.traffic.download.Load(),
+		"caTrusted":        a.caTrusted,
 	}
 }
 
@@ -105,16 +112,36 @@ func (a *App) setState(s State, msg string) {
 }
 
 // StartLogin 异步登录：恢复会话 -> 在线即启动代理；否则走密码登录，需要短信则弹窗。
-func (a *App) StartLogin(username, password string, remember, auto bool) {
+func (a *App) StartLogin(username, password string, remember, auto bool) error {
+	if !a.authMu.TryLock() {
+		return fmt.Errorf("登录操作正在进行，请稍候")
+	}
+	a.mu.Lock()
+	if a.state == StateOnline || a.state == StateSMSPending || a.state == StateSubmitting || a.state == StateLoggingIn {
+		a.mu.Unlock()
+		a.authMu.Unlock()
+		return fmt.Errorf("当前状态不能重复登录")
+	}
+	if username != "" && username != a.cfg.Username {
+		a.cfg.Username = username
+		a.cfg.Password = ""
+	}
+	if password != "" {
+		a.cfg.Password = password
+	}
+	if !auto {
+		a.cfg.RememberPassword = remember
+		if err := a.cfg.Save(); err != nil {
+			a.mu.Unlock()
+			a.authMu.Unlock()
+			return fmt.Errorf("保存设置失败: %w", err)
+		}
+	}
+	cfg := *a.cfg
+	a.state, a.message = StateLoggingIn, "正在连接学校服务器…"
+	a.mu.Unlock()
 	go func() {
-		a.setState(StateLoggingIn, "正在连接学校服务器…")
-
-		if username != "" {
-			a.cfg.Username = username
-		}
-		if password != "" {
-			a.cfg.Password = password
-		}
+		defer a.authMu.Unlock()
 		sess, err := core.NewSession()
 		if err != nil {
 			a.setState(StateError, "初始化失败: "+err.Error())
@@ -123,7 +150,7 @@ func (a *App) StartLogin(username, password string, remember, auto bool) {
 		a.mu.Lock()
 		a.sess = sess
 		a.mu.Unlock()
-		if err := sess.Load(a.sessionFile); err != nil && !os.IsNotExist(err) {
+		if err := loadLoginSession(sess, a.sessionFile, auto); err != nil {
 			a.setState(StateError, "无法读取现有会话: "+err.Error())
 			return
 		}
@@ -137,18 +164,13 @@ func (a *App) StartLogin(username, password string, remember, auto bool) {
 			a.setState(StateIdle, "会话未在线，请手动登录")
 			return
 		}
-		if a.cfg.Username == "" || a.cfg.Password == "" {
+		if cfg.Username == "" || cfg.Password == "" {
 			a.setState(StateError, "请先填写学号和密码")
-			return
-		}
-		a.cfg.RememberPassword = remember
-		if err := a.cfg.Save(); err != nil {
-			a.setState(StateError, "保存设置失败: "+err.Error())
 			return
 		}
 
 		// 2) 密码登录（内部带 x-sdp-env 设备标识与 CSRF 轮换）
-		info, err := sess.LoginLDAP(a.cfg.Username, a.cfg.Password, a.cfg.LdapDomain)
+		info, err := sess.LoginLDAP(cfg.Username, cfg.Password, cfg.LdapDomain)
 		switch err {
 		case nil:
 			_ = sess.Save(a.sessionFile)
@@ -156,8 +178,9 @@ func (a *App) StartLogin(username, password string, remember, auto bool) {
 			return
 		case core.ErrSMSPending:
 			// 3) 短信二次验证：触发发送并弹出验证码窗口
+			phone := sess.GetMaskedPhone(sess.SMSAuthId)
 			a.mu.Lock()
-			a.phoneMasked = sess.GetMaskedPhone(sess.SMSAuthId)
+			a.phoneMasked = phone
 			a.mu.Unlock()
 			_ = sess.Save(a.sessionFile)
 			if serr := sess.SendSMSCode(sess.SMSAuthId); serr != nil {
@@ -175,19 +198,25 @@ func (a *App) StartLogin(username, password string, remember, auto bool) {
 			return
 		}
 	}()
+	return nil
 }
 
 // SubmitSMS 异步提交短信验证码。
-func (a *App) SubmitSMS(code string) {
-	go func() {
-		a.setState(StateSubmitting, "正在校验验证码…")
-		a.mu.Lock()
-		sess := a.sess
+func (a *App) SubmitSMS(code string) error {
+	if !a.authMu.TryLock() {
+		return fmt.Errorf("登录操作正在进行，请稍候")
+	}
+	a.mu.Lock()
+	sess := a.sess
+	if a.state != StateSMSPending || sess == nil || sess.SMSAuthId == "" {
 		a.mu.Unlock()
-		if sess == nil || sess.SMSAuthId == "" {
-			a.setState(StateError, "无待校验的登录，请重新登录")
-			return
-		}
+		a.authMu.Unlock()
+		return fmt.Errorf("无待校验的登录，请重新登录")
+	}
+	a.state, a.message = StateSubmitting, "正在校验验证码…"
+	a.mu.Unlock()
+	go func() {
+		defer a.authMu.Unlock()
 		if err := sess.CheckSMSCode(sess.SMSAuthId, code); err != nil {
 			a.setState(StateSMSPending, "验证码校验失败: "+err.Error())
 			return
@@ -206,10 +235,15 @@ func (a *App) SubmitSMS(code string) {
 		_ = sess.Save(a.sessionFile)
 		a.finishLogin(sess, info)
 	}()
+	return nil
 }
 
 // ResendSMS 仅在等待短信时允许手动重发，避免误点造成频繁发送。
 func (a *App) ResendSMS() error {
+	if !a.authMu.TryLock() {
+		return fmt.Errorf("登录操作正在进行，请稍候")
+	}
+	defer a.authMu.Unlock()
 	a.mu.Lock()
 	if a.state != StateSMSPending || a.sess == nil || a.sess.SMSAuthId == "" {
 		a.mu.Unlock()
@@ -267,6 +301,7 @@ func (a *App) startProxy() error {
 		a.mu.Unlock()
 		return fmt.Errorf("CA 初始化失败: %w", err)
 	}
+	a.caTrusted = localCATrusted(a.cfg.DataDir)
 	gw := proxy.NewGateway(sess, ca, a.cfg.ListenProxy)
 	if a.systemProxyOn && !a.tun.Running() {
 		if err := a.systemProxy.Enable(a.cfg.ListenProxy, a.proxyMode); err != nil {
@@ -453,6 +488,10 @@ func (a *App) UpdateSettings(port int, systemOn bool, mode string) error {
 }
 
 func (a *App) Logout() error {
+	if !a.authMu.TryLock() {
+		return fmt.Errorf("登录操作正在进行，请稍候再退出登录")
+	}
+	defer a.authMu.Unlock()
 	if err := a.StopProxy(); err != nil {
 		return err
 	}
@@ -463,7 +502,7 @@ func (a *App) Logout() error {
 	a.username = ""
 	a.cfg.Password = ""
 	a.cfg.RememberPassword = false
-	a.mu.Unlock()
+	defer a.mu.Unlock()
 	if err := os.Remove(a.sessionFile); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -484,8 +523,15 @@ func (a *App) ServeAPI(ln net.Listener, mux *http.ServeMux) error {
 			Username, Password     string
 			RememberPassword, Auto bool
 		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		a.StartLogin(req.Username, req.Password, req.RememberPassword, req.Auto)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if err := a.StartLogin(req.Username, req.Password, req.RememberPassword, req.Auto); err != nil {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
 		writeJSON(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("/api/sms", func(w http.ResponseWriter, r *http.Request) {
@@ -493,8 +539,15 @@ func (a *App) ServeAPI(ln net.Listener, mux *http.ServeMux) error {
 			return
 		}
 		var req struct{ Code string }
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		a.SubmitSMS(req.Code)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if err := a.SubmitSMS(req.Code); err != nil {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
 		writeJSON(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("/api/sms/resend", func(w http.ResponseWriter, r *http.Request) {
@@ -532,7 +585,9 @@ func (a *App) ServeAPI(ln net.Listener, mux *http.ServeMux) error {
 			err = fmt.Errorf("未知代理操作")
 		}
 		if err != nil {
-			a.setState(StateOnline, err.Error())
+			a.mu.Lock()
+			a.message = err.Error()
+			a.mu.Unlock()
 			w.WriteHeader(http.StatusBadRequest)
 			writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
 			return
@@ -597,6 +652,24 @@ func (a *App) ServeAPI(ln net.Listener, mux *http.ServeMux) error {
 			writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
 			return
 		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/api/ca/trust", func(w http.ResponseWriter, r *http.Request) {
+		if !apiWriteAllowed(w, r) {
+			return
+		}
+		a.mu.Lock()
+		dataDir := a.cfg.DataDir
+		a.mu.Unlock()
+		if err := TrustLocalCA(dataDir); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
+		a.mu.Lock()
+		a.caTrusted = true
+		a.message = "本地证书已受当前用户信任，请刷新校园网页"
+		a.mu.Unlock()
 		writeJSON(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("/api/logout", func(w http.ResponseWriter, r *http.Request) {

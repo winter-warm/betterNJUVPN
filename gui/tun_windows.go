@@ -71,7 +71,7 @@ dns:
     - 223.5.5.5
 tun:
   enable: true
-  stack: gvisor
+  stack: system
   device: njuConnectTun
   auto-route: true
   auto-detect-interface: true
@@ -121,6 +121,9 @@ func (m *tunManager) Start(dataDir, proxyAddr string) error {
 	}
 	if !tunIsElevated() {
 		return fmt.Errorf("虚拟网卡需要以管理员身份启动 njuConnect")
+	}
+	if conflict := otherTUNAdapter(); conflict != "" {
+		return fmt.Errorf("检测到正在运行的虚拟网卡 %s；请先关闭它的 TUN，再启动本程序虚拟网卡", conflict)
 	}
 	bin, err := tunBinary()
 	if err != nil {
@@ -233,6 +236,20 @@ func (m *tunManager) Start(dataDir, proxyAddr string) error {
 	windows.CloseHandle(job)
 	logFile.Close()
 	return fmt.Errorf("Mihomo TUN 启动超时，请查看 %s", logFile.Name())
+}
+
+func otherTUNAdapter() string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, adapter := range interfaces {
+		name := strings.ToLower(adapter.Name)
+		if adapter.Flags&net.FlagUp != 0 && adapter.Name != "njuConnectTun" && (strings.Contains(name, "mihomo") || strings.Contains(name, "clash") || strings.Contains(name, "atrust")) {
+			return adapter.Name
+		}
+	}
+	return ""
 }
 
 func (m *tunManager) Stop() error {

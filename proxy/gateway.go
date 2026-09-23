@@ -156,6 +156,10 @@ func (g *Gateway) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		resp = finalResp
 		defer resp.Body.Close()
 	}
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		g.handleUpgrade(w, r, resp)
+		return
+	}
 
 	copyResponse(w, resp, r.Host, target.URL.Host, usesSession)
 }
@@ -211,9 +215,6 @@ func (g *Gateway) mapRequest(r *http.Request) (*http.Request, bool) {
 	outReq.Header.Del("Proxy-Authorization")
 	// Host 必须是出站主机
 	outReq.Host = outURL.Host
-	if usesSession {
-		g.mergeSessionCookies(outReq, &outURL)
-	}
 	outReq = outReq.WithContext(r.Context())
 	return outReq, usesSession
 }
@@ -245,10 +246,21 @@ func (g *Gateway) mergeSessionCookies(req *http.Request, outURL *url.URL) {
 
 // forward 发送出站请求；usesSession 决定用会话客户端还是干净客户端。
 func (g *Gateway) forward(req *http.Request, usesSession bool) (*http.Response, error) {
+	client := *g.plain
 	if usesSession {
-		return g.session.Do(req)
+		g.mergeSessionCookies(req, req.URL)
+		client = *g.session.Client
+		// Cookies were merged above; still persist response cookies below.
+		client.Jar = nil
 	}
-	return g.plain.Do(req)
+	if isWebSocket(req.Header) {
+		client.Timeout = 0 // An upgraded stream is not a 60-second HTTP download.
+	}
+	resp, err := client.Do(req)
+	if err == nil && usesSession {
+		g.session.Jar.SetCookies(req.URL, resp.Cookies())
+	}
+	return resp, err
 }
 
 var gatewayScriptRedirect = regexp.MustCompile(`var locationUrl = "(https://[^" ]+)";`)
@@ -424,6 +436,7 @@ func (g *Gateway) handleConnect(w http.ResponseWriter, r *http.Request) {
 		req.Host = host
 		req = req.WithContext(r.Context())
 		respWriter := newRespWriter(tlsConn, req)
+		respWriter.reader = reader
 		g.handleHTTP(respWriter, req)
 		if req.Close || respWriter.closeAfter {
 			return
@@ -487,6 +500,15 @@ func copyHeaders(dst, src http.Header) {
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
+	}
+	for _, value := range src.Values("Connection") {
+		for _, token := range strings.Split(value, ",") {
+			dst.Del(strings.TrimSpace(token))
+		}
+	}
+	if isWebSocket(src) {
+		dst.Set("Connection", "Upgrade")
+		dst.Set("Upgrade", "websocket")
 	}
 }
 

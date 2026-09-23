@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +22,7 @@ type storedCookie struct {
 	Expires  *time.Time `json:"expires,omitempty"`
 	Secure   bool       `json:"secure"`
 	HttpOnly bool       `json:"httpOnly"`
+	HostOnly bool       `json:"hostOnly"`
 }
 
 // jarItem 与 storedCookie 相同但含运行时字段
@@ -67,19 +67,35 @@ func (j *SerializableJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	for _, c := range cookies {
-		domain := c.Domain
+		domain := strings.ToLower(strings.TrimPrefix(c.Domain, "."))
 		if domain == "" {
-			domain = u.Hostname()
+			domain = strings.ToLower(u.Hostname())
+		} else if !domainMatch(u.Hostname(), domain) {
+			continue
 		}
 		path := c.Path
-		if path == "" {
+		if !strings.HasPrefix(path, "/") {
 			path = "/"
+			if i := strings.LastIndex(u.Path, "/"); i > 0 {
+				path = u.Path[:i]
+			}
 		}
 		item := &jarItem{
 			Name: c.Name, Value: c.Value, Domain: domain, Path: path,
 			Secure: c.Secure, HttpOnly: c.HttpOnly,
+			HostOnly: c.Domain == "",
 		}
-		if !c.Expires.IsZero() {
+		if c.MaxAge < 0 {
+			exp := time.Unix(0, 0)
+			item.Expires = &exp
+		} else if c.MaxAge > 0 {
+			seconds := c.MaxAge
+			if seconds > 2147483647 {
+				seconds = 2147483647
+			}
+			exp := time.Now().Add(time.Duration(seconds) * time.Second)
+			item.Expires = &exp
+		} else if !c.Expires.IsZero() {
 			exp := c.Expires
 			item.Expires = &exp
 		}
@@ -118,7 +134,7 @@ func (j *SerializableJar) Cookies(u *url.URL) []*http.Cookie {
 			continue
 		}
 		if u.Scheme == "https" || !c.Secure {
-			if domainMatch(host, c.Domain) && pathMatch(u.Path, c.Path) {
+			if (host == c.Domain || !c.HostOnly && domainMatch(host, c.Domain)) && pathMatch(u.Path, c.Path) {
 				out = append(out, &http.Cookie{
 					Name: c.Name, Value: c.Value, Domain: c.Domain, Path: c.Path,
 					Secure: c.Secure, HttpOnly: c.HttpOnly,
@@ -171,9 +187,6 @@ func (s *Session) SetEnvHeader(v string) { s.pendingEnvHeader = v }
 func (s *Session) getCsrfToken() string { return s.csrfToken }
 func (s *Session) setCsrfToken(t string) {
 	s.csrfToken = t
-	if t != "" {
-		log.Printf("[csrf] 更新 token: %.8s...", t)
-	}
 }
 
 // NewSession 创建直连（不走系统代理/Clash）、公共 DNS 解析的会话。

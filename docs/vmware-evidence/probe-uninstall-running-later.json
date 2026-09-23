@@ -1,0 +1,33 @@
+﻿{
+    "tag":  "uninstall-running-later",
+    "time":  "2026-09-23T20:56:12.2063031+08:00",
+    "computer":  "NJU-VM-TEST",
+    "appExists":  true,
+    "guiExists":  true,
+    "cliExists":  false,
+    "mihomoExists":  false,
+    "dataExists":  false,
+    "configExists":  false,
+    "startMenuExists":  false,
+    "desktopIconExists":  false,
+    "uninstall":  {
+
+                  },
+    "processes":  [
+                      {
+                          "ProcessName":  "betterNJUVPN",
+                          "Id":  7228
+                      }
+                  ],
+    "caCertificates":  [
+
+                       ],
+    "proxy":  {
+                  "ProxyEnable":  0,
+                  "ProxyServer":  null,
+                  "AutoConfigURL":  "http://127.0.0.1:7899/proxy.pac",
+                  "AutoDetect":  null,
+                  "ProxyOverride":  "\u003clocal\u003e;localhost;127.*"
+              },
+    "proxyRecoveryRunOnce":  null
+}

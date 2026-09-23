@@ -16,6 +16,50 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
+func TestStaleOwnProxyDetection(t *testing.T) {
+	addr := "127.0.0.1:7899"
+	for _, v := range []winProxyValues{
+		{AutoConfig: proxyString{true, "http://" + addr + "/proxy.pac"}},
+		{Enable: proxyDword{true, 1}, Server: proxyString{true, addr}},
+	} {
+		if !usesLocalProxy(v, addr) {
+			t.Fatal("own endpoint not recognized")
+		}
+		clean := withoutProxy(v)
+		if usesLocalProxy(clean, addr) || clean.Enable.Value != 0 {
+			t.Fatal("own endpoint not cleared")
+		}
+	}
+	other := winProxyValues{Enable: proxyDword{true, 1}, Server: proxyString{true, "127.0.0.1:7897"}}
+	if usesLocalProxy(other, addr) {
+		t.Fatal("other proxy mistaken for own endpoint")
+	}
+}
+
+func TestRestoreOwnedProxyAfterWindowsChangesAutoDetect(t *testing.T) {
+	previous := winProxyValues{
+		Enable: proxyDword{true, 1},
+		Server: proxyString{true, "127.0.0.1:8123"},
+	}
+	applied := winProxyValues{
+		Enable:     proxyDword{true, 0},
+		Override:   proxyString{true, "<local>;localhost;127.*"},
+		AutoConfig: proxyString{true, "http://127.0.0.1:7899/proxy.pac"},
+		AutoDetect: proxyDword{true, 0},
+	}
+	current := applied
+	current.AutoDetect = proxyDword{} // Windows may remove this value while PAC remains active.
+	restored, owned := restoreOwnedValues(current, proxyRecovery{Previous: previous, Applied: applied})
+	if !owned || !reflect.DeepEqual(restored, previous) {
+		t.Fatalf("proxy not restored: owned=%v, got=%+v", owned, restored)
+	}
+	current.AutoConfig = proxyString{true, "http://another-proxy/proxy.pac"}
+	restored, owned = restoreOwnedValues(current, proxyRecovery{Previous: previous, Applied: applied})
+	if owned || !reflect.DeepEqual(restored, current) {
+		t.Fatal("another program's proxy settings were changed")
+	}
+}
+
 // This test touches the user's Windows proxy settings, so it runs only when
 // explicitly requested. The recovery file is kept until restoration succeeds.
 func TestLiveSystemProxyRestore(t *testing.T) {

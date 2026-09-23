@@ -1,0 +1,42 @@
+﻿{
+    "tag":  "login-trusted",
+    "time":  "2026-09-23T20:24:03.4073136+08:00",
+    "computer":  "NJU-VM-TEST",
+    "appExists":  true,
+    "guiExists":  true,
+    "cliExists":  true,
+    "mihomoExists":  true,
+    "dataExists":  true,
+    "configExists":  true,
+    "startMenuExists":  true,
+    "desktopIconExists":  true,
+    "uninstall":  {
+                      "DisplayName":  "betterNJUVPN",
+                      "DisplayVersion":  "0.1.1",
+                      "UninstallString":  "\"C:\\Users\\njuvmtest\\AppData\\Local\\Programs\\betterNJUVPN\\unins000.exe\""
+                  },
+    "processes":  [
+                      {
+                          "ProcessName":  "betterNJUVPN",
+                          "Id":  6984
+                      },
+                      {
+                          "ProcessName":  "betterNJUVPN",
+                          "Id":  7228
+                      }
+                  ],
+    "caCertificates":  [
+                           {
+                               "Subject":  "CN=njuConnect Local CA, O=njuconnect",
+                               "Thumbprint":  "1715235750EABDA94C443075DF84B268EC664CEA"
+                           }
+                       ],
+    "proxy":  {
+                  "ProxyEnable":  0,
+                  "ProxyServer":  null,
+                  "AutoConfigURL":  "http://127.0.0.1:7899/proxy.pac",
+                  "AutoDetect":  null,
+                  "ProxyOverride":  "\u003clocal\u003e;localhost;127.*"
+              },
+    "proxyRecoveryRunOnce":  "\"C:\\Users\\njuvmtest\\AppData\\Local\\Programs\\betterNJUVPN\\betterNJUVPN.exe\" recover-proxy \"C:\\Users\\njuvmtest\\AppData\\Local\\Programs\\betterNJUVPN\\data\""
+}

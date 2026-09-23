@@ -25,6 +25,7 @@
     <div id="loginArea"><div class="login-fields"><div class="field"><label for="username">学号</label><input id="username" autocomplete="username" placeholder="学号"></div><div class="field"><label for="password">统一身份认证密码</label><input id="password" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button class="primary" id="loginBtn" onclick="doLogin(false)">登录</button><button class="outline" id="smsOpenBtn" onclick="showSms(state?.phone)" style="display:none">输入短信码</button></div><label class="remember"><input type="checkbox" id="rememberPassword">保存密码到本机配置文件</label></div>
     <div class="account-online" id="onlineArea"><span id="accountName">已登录</span><button class="outline blue" id="logoutBtn" onclick="doLogout()">退出登录</button></div>
     <div class="error" id="error"></div>
+    <div class="error" id="caNotice">校园网页使用本地 HTTPS 证书。<button class="outline" id="trustCaBtn" onclick="trustCA()">信任本地证书（当前用户）</button></div>
   </section>
   <div class="grid">
     <section class="panel"><div class="panel-title"><span class="panel-icon">▤</span>网络设置</div><div class="panel-body">
@@ -44,9 +45,12 @@
   <div class="footer">关闭窗口即退出并恢复原系统代理设置 · 浏览器需信任本地 CA</div>
 </main>
 <div class="mask" id="smsMask"><div class="modal"><h3>短信验证</h3><p>学校网关已接受发送请求，绑定号码：<strong id="phone">查询中</strong>。短信可能延迟；未收到时可在 60 秒后手动重发。</p><input id="smsCode" maxlength="6" inputmode="numeric" placeholder="验证码"><div class="modal-actions"><button class="outline" onclick="resendSms()">重发短信</button><button class="outline" onclick="closeSms()">稍后输入</button><button class="primary" onclick="doSms()">确认</button></div></div></div>
+<div class="mask" id="caMask"><div class="modal"><h3>信任本地 HTTPS 证书</h3><p>首次访问校园 HTTPS 网页前，需要由当前 Windows 用户信任本程序在本机生成的证书。选择信任后，刷新浏览器页面即可；也可以稍后从账户区域操作。</p><div class="modal-actions"><button class="outline" onclick="closeCAModal()">稍后</button><button class="primary" onclick="trustCA()">信任证书</button></div></div></div>
 <script>
 let state=null,autoTried=false,initialised=false,lastState="",networkMode="system";
+let caPromptShown=false;
 let trafficSample=null;
+let loginBusy=false,smsBusy=false;
 const $=id=>document.getElementById(id);
 function formatBytes(n){if(n<1024)return Math.round(n)+" B";const units=["KB","MB","GB","TB"];let i=-1;do{n/=1024;i++}while(n>=1024&&i<units.length-1);return n.toFixed(n>=100?0:n>=10?1:2)+" "+units[i]}
 function renderTraffic(s){const now=performance.now(),up=Number(s.uploadBytes)||0,down=Number(s.downloadBytes)||0;$("uploadTotal").textContent=formatBytes(up);$("downloadTotal").textContent=formatBytes(down);if(!trafficSample||up<trafficSample.up||down<trafficSample.down){trafficSample={now,up,down};return}const seconds=(now-trafficSample.now)/1000;if(seconds<0.9)return;$("uploadSpeed").textContent=formatBytes(Math.max(0,(up-trafficSample.up)/seconds))+"/s";$("downloadSpeed").textContent=formatBytes(Math.max(0,(down-trafficSample.down)/seconds))+"/s";trafficSample={now,up,down}}
@@ -65,13 +69,15 @@ function render(s){
   $("loginBtn").disabled=["logging_in","sms_pending","submitting_sms"].includes(s.state);
   $("smsOpenBtn").style.display=s.state==="sms_pending"?"inline-block":"none";
   $("error").style.display=s.message&&(s.state==="error"||s.message.includes("失败"))?"block":"none";$("error").textContent=s.message||"";
-  const tunSelected=networkMode==="tun",activeOn=tunSelected?!!s.tunOn:!!s.systemProxyOn;
+  $("caNotice").style.display=s.proxyOn&&!s.caTrusted?"block":"none";
+  if(s.caTrusted)$("caMask").classList.remove("show");else if(s.proxyOn&&!caPromptShown){caPromptShown=true;$("caMask").classList.add("show")}
+  const tunSelected=networkMode==="tun",activeOn=tunSelected?!!s.tunOn:!!(s.systemProxyOn&&s.proxyOn&&!s.tunOn&&s.proxyMode!=="direct");
   $("networkToggleLabel").textContent=tunSelected?"虚拟网卡":"系统代理";
   $("networkToggle").setAttribute("aria-label",tunSelected?"虚拟网卡":"系统代理");
   $("networkToggle").classList.toggle("on",activeOn);$("networkToggle").setAttribute("aria-checked",activeOn);
-  $("networkToggle").disabled=!!s.tunBusy||(tunSelected&&!s.tunAvailable&&!s.tunOn);
+  $("networkToggle").disabled=!!s.tunBusy||!online||(tunSelected&&!s.tunAvailable&&!s.tunOn)||(!tunSelected&&s.tunOn);
   $("systemTab").classList.toggle("selected",!tunSelected);$("tunTab").classList.toggle("selected",tunSelected);
-  $("networkNote").textContent=tunSelected?(s.tunBusy?s.message:(s.tunOn?"虚拟网卡运行中：南大网页经本地代理，其余流量直连":!s.tunAvailable?"虚拟网卡需要管理员权限，请以管理员身份重新启动程序":"虚拟网卡全局接管流量并按规则分流")):(s.systemProxyOn?"浏览器系统代理已开启":"系统代理供浏览器使用");
+  $("networkNote").textContent=!online?"请先登录，登录后才能开启网络代理":tunSelected?(s.tunBusy?s.message:(s.tunOn?"虚拟网卡运行中：南大网页经本地代理，其余流量直连":!s.tunAvailable?"虚拟网卡需要管理员权限，请以管理员身份重新启动程序":"虚拟网卡全局接管流量并按规则分流")):(activeOn?"浏览器系统代理正在运行":"系统代理未运行；打开下方开关后再使用本地代理");
   for(const [name,id] of [["rule","modeRule"],["global","modeGlobal"],["direct","modeDirect"]])$(id).classList.toggle("selected",s.proxyMode===name);
   $("modeNote").textContent=modeText[s.proxyMode]||modeText.rule;
   if(s.state==="sms_pending"&&lastState!=="sms_pending")showSms(s.phone);lastState=s.state;
@@ -79,18 +85,20 @@ function render(s){
 async function api(path,body){const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"操作失败");return data}
 function showError(error){$("error").textContent=error.message||String(error);$("error").style.display="block"}
 async function poll(){try{const response=await fetch("/api/status",{cache:"no-store"});const s=await response.json();render(s);if(!autoTried&&s.state==="idle"){autoTried=true;await doLogin(true)}}catch(error){showError(error)}}
-async function doLogin(auto){const username=$("username").value.trim(),password=$("password").value;if(!auto&&(!username||(!password&&!state?.hasPassword))){showError(new Error("请填写学号和密码"));return}try{await api("/api/login",{username,password,rememberPassword:$("rememberPassword").checked,auto})}catch(error){showError(error)}}
-async function doSms(){const code=$("smsCode").value.trim();if(!code)return;try{await api("/api/sms",{code});closeSms()}catch(error){showError(error)}}
+async function doLogin(auto){if(loginBusy||["logging_in","sms_pending","submitting_sms","online"].includes(state?.state))return;const username=$("username").value.trim(),password=$("password").value;if(!auto&&(!username||(!password&&!state?.hasPassword))){showError(new Error("请填写学号和密码"));return}loginBusy=true;$("loginBtn").disabled=true;try{await api("/api/login",{username,password,rememberPassword:$("rememberPassword").checked,auto});await poll()}catch(error){showError(error)}finally{loginBusy=false}}
+async function doSms(){if(smsBusy||state?.state!=="sms_pending")return;const code=$("smsCode").value.trim();if(!code)return;smsBusy=true;try{await api("/api/sms",{code});closeSms();await poll()}catch(error){showError(error)}finally{smsBusy=false}}
 async function resendSms(){try{await api("/api/sms/resend",{});await poll()}catch(error){showError(error)}}
 function showSms(phone){$("phone").textContent=phone||"绑定手机";$("smsMask").classList.add("show");$("smsCode").value="";$("smsCode").focus()}
 function closeSms(){$("smsMask").classList.remove("show")}
 async function doLogout(){try{await api("/api/logout",{});$("password").value="";await poll()}catch(error){showError(error)}}
 async function toggleTun(){if(state?.tunBusy)return;try{await api("/api/tun",{action:state.tunOn?"stop":"start"});await poll()}catch(error){showError(error)}}
+function closeCAModal(){$("caMask").classList.remove("show")}
+async function trustCA(){try{$("trustCaBtn").disabled=true;await api("/api/ca/trust",{});closeCAModal();await poll()}catch(error){closeCAModal();showError(error)}finally{$("trustCaBtn").disabled=false}}
 function selectNetworkMode(mode){networkMode=mode;if(state)render(state)}
 function toggleActiveNetwork(){if(networkMode==="tun")toggleTun();else toggleSystem()}
 let settingsBusy=false;
 async function applySettings(systemOn,mode,port){if(settingsBusy)return;settingsBusy=true;try{await api("/api/settings",{port:Number(port),systemProxyOn:systemOn,proxyMode:mode});await poll()}catch(error){showError(error)}finally{settingsBusy=false}}
-function toggleSystem(){applySettings(!state.systemProxyOn,state.proxyMode,$("proxyPort").value)}
+function toggleSystem(){const active=state.systemProxyOn&&state.proxyOn&&!state.tunOn&&state.proxyMode!=="direct";applySettings(!active,!active&&state.proxyMode==="direct"?"rule":state.proxyMode,$("proxyPort").value)}
 function setMode(mode){applySettings(state.systemProxyOn,mode,$("proxyPort").value)}
 function saveSettings(){applySettings(state.systemProxyOn,state.proxyMode,$("proxyPort").value)}
 async function doQuit(){try{await api("/api/quit",{});setTimeout(()=>window.close(),250)}catch(error){showError(error)}}

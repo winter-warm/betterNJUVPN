@@ -8,8 +8,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
+	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows/registry"
 	"njuconnect/core"
@@ -174,6 +175,86 @@ func notifyProxyChange() error {
 	return nil
 }
 
+func usesLocalProxy(v winProxyValues, addr string) bool {
+	return v.AutoConfig.Present && v.AutoConfig.Value == "http://"+addr+"/proxy.pac" ||
+		v.Enable.Present && v.Enable.Value != 0 && v.Server.Present && v.Server.Value == addr
+}
+
+func withoutProxy(v winProxyValues) winProxyValues {
+	v.Enable = proxyDword{true, 0}
+	v.Server = proxyString{}
+	v.AutoConfig = proxyString{}
+	return v
+}
+
+// restoreOwnedValues restores fields still carrying this app's applied values.
+// Windows may change an unrelated value (notably AutoDetect) while the PAC is
+// active; that must not leave our endpoint behind or overwrite a later change.
+func restoreOwnedValues(current winProxyValues, recovery proxyRecovery) (winProxyValues, bool) {
+	addr := recovery.Applied.Server.Value
+	if recovery.Applied.AutoConfig.Present {
+		addr = strings.TrimSuffix(strings.TrimPrefix(recovery.Applied.AutoConfig.Value, "http://"), "/proxy.pac")
+	}
+	if !usesLocalProxy(current, addr) {
+		return current, false
+	}
+	merged := current
+	if current.Enable == recovery.Applied.Enable {
+		merged.Enable = recovery.Previous.Enable
+	}
+	if current.Server == recovery.Applied.Server {
+		merged.Server = recovery.Previous.Server
+	}
+	if current.Override == recovery.Applied.Override {
+		merged.Override = recovery.Previous.Override
+	}
+	if current.AutoConfig == recovery.Applied.AutoConfig {
+		merged.AutoConfig = recovery.Previous.AutoConfig
+	}
+	if current.AutoDetect == recovery.Applied.AutoDetect {
+		merged.AutoDetect = recovery.Previous.AutoDetect
+	}
+	if usesLocalProxy(merged, addr) {
+		merged = withoutProxy(merged)
+	}
+	return merged, true
+}
+
+// ClearStaleOwnProxy handles older runs that left an app endpoint in Windows
+// settings without a recovery file. It only acts when that endpoint is down.
+func (m *systemProxyManager) ClearStaleOwnProxy(addr string) error {
+	if _, err := os.Stat(m.stateFile); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if !strings.HasPrefix(addr, "127.0.0.1:") {
+		return nil
+	}
+	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		return nil
+	}
+	k, err := registry.OpenKey(registry.CURRENT_USER, internetSettings, registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer k.Close()
+	current, err := readProxyValues(k)
+	if err != nil {
+		return err
+	}
+	if usesLocalProxy(current, addr) {
+		return writeProxyValues(k, withoutProxy(current))
+	}
+	return nil
+}
+
+func ClearStaleOwnProxy(dataDir, addr string) error {
+	return newSystemProxyManager(dataDir).ClearStaleOwnProxy(addr)
+}
+
 func (m *systemProxyManager) Enable(addr, mode string) error {
 	if mode == "direct" {
 		return m.Restore()
@@ -195,8 +276,8 @@ func (m *systemProxyManager) Enable(addr, mode string) error {
 		if err := json.Unmarshal(data, &recovery); err != nil {
 			return err
 		}
-		if reflect.DeepEqual(previous, recovery.Applied) {
-			previous = recovery.Previous
+		if restored, owned := restoreOwnedValues(previous, recovery); owned {
+			previous = restored
 		} else {
 			// Another program changed the proxy; preserve its current settings.
 			if err := m.removeRunOnce(); err != nil {
@@ -205,6 +286,9 @@ func (m *systemProxyManager) Enable(addr, mode string) error {
 		}
 	} else if !os.IsNotExist(err) {
 		return err
+	}
+	if usesLocalProxy(previous, addr) {
+		previous = withoutProxy(previous)
 	}
 	applied := previous
 	applied.AutoDetect = proxyDword{true, 0}
@@ -269,8 +353,8 @@ func (m *systemProxyManager) Restore() error {
 	if err != nil {
 		return err
 	}
-	if reflect.DeepEqual(current, recovery.Applied) {
-		if err := writeProxyValues(k, recovery.Previous); err != nil {
+	if restored, owned := restoreOwnedValues(current, recovery); owned {
+		if err := writeProxyValues(k, restored); err != nil {
 			return err
 		}
 	}

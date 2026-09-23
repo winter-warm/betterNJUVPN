@@ -19,6 +19,19 @@ type connRespWriter struct {
 	status      int
 	closeAfter  bool
 	wroteHeader bool
+	reader      *bufio.Reader
+}
+
+func (w *connRespWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if w.wroteHeader {
+		return nil, nil, errors.New("response already started")
+	}
+	w.wroteHeader = true
+	reader := w.reader
+	if reader == nil {
+		reader = bufio.NewReader(w.conn)
+	}
+	return w.conn, bufio.NewReadWriter(reader, bufio.NewWriter(w.conn)), nil
 }
 
 func newRespWriter(conn net.Conn, req *http.Request) *connRespWriter {

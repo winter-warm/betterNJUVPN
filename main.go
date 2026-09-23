@@ -279,6 +279,30 @@ func main() {
 	case "doctor":
 		cmdDoctor()
 		return
+	case "uninstall-cleanup":
+		dataDir := "data"
+		proxyAddr := "127.0.0.1:7899"
+		if cfg, err := core.LoadConfig(); err == nil {
+			dataDir = cfg.DataDir
+			proxyAddr = cfg.ListenProxy
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := gui.StopAppProcesses(filepath.Join(filepath.Dir(exe), "betterNJUVPN.exe")); err != nil {
+			log.Printf("结束正在运行的应用失败: %v", err)
+		}
+		if err := gui.RecoverProxy(dataDir); err != nil {
+			log.Printf("恢复代理设置失败: %v", err)
+		}
+		if err := gui.ClearStaleOwnProxy(dataDir, proxyAddr); err != nil {
+			log.Printf("清理失效代理设置失败: %v", err)
+		}
+		if err := gui.UntrustLocalCA(dataDir); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	cfg, err := core.LoadConfig()
@@ -287,6 +311,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "trust-ca":
+		if err := gui.TrustLocalCA(cfg.DataDir); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("本地 CA 已由当前用户信任")
 	case "login":
 		cmdLogin(cfg)
 	case "verify":
