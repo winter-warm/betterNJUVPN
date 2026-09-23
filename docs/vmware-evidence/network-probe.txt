@@ -1,4 +1,0 @@
-﻿PAC: exit=0; http=200;tls=0
-CampusHTTPS: exit=35; curl: (35) schannel: next InitializeSecurityContext failed: CRYPT_E_NO_REVOCATION_CHECK (0x80092012) - 吊销功能无法检查证书是否吊销。 http=000;tls=0
-CampusHTTPSNoRevocation: exit=0; http=200;tls=0
-PublicHTTPS: exit=0; http=200;tls=0

@@ -3,6 +3,7 @@ config.json
 config.yaml
 data/
 .local/
+docs/
 session.json
 *.key
 *.pem
