@@ -14,6 +14,7 @@ import (
 // Run 启动 GUI：本地 API 服务 + WebView2 窗口（不可用则回退到默认浏览器）。
 // 关闭窗口 / 点击退出即停止代理；异常退出由独立监护恢复系统代理。
 func Run() {
+	enableHighDPI()
 	release, err := acquireGUIInstance()
 	if err != nil {
 		fatalDialog(err.Error())

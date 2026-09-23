@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -285,6 +286,7 @@ func (a *App) startProxy() error {
 		a.mu.Unlock()
 		return nil
 	}
+	conflicts := otherProxyApps(a.cfg.ListenProxy)
 	sess := a.sess
 	if sess == nil {
 		a.mu.Unlock()
@@ -323,6 +325,9 @@ func (a *App) startProxy() error {
 	a.server = srv
 	a.proxyOn = true
 	a.message = "代理运行中"
+	if len(conflicts) > 0 {
+		a.message = "检测到其他代理应用运行（" + strings.Join(conflicts, "、") + "），可能造成异常卡顿"
+	}
 	a.mu.Unlock()
 	go func() {
 		if serr := srv.Serve(trafficListener{Listener: ln, counters: &a.traffic}); serr != nil && serr != http.ErrServerClosed {
@@ -391,6 +396,9 @@ func (a *App) StartTUN() error {
 	}
 	a.mu.Lock()
 	a.message = "虚拟网卡运行中：南大网页经本地代理，其余流量直连"
+	if conflicts := otherProxyApps(addr); len(conflicts) > 0 {
+		a.message += "；检测到其他代理应用运行（" + strings.Join(conflicts, "、") + "），可能造成异常卡顿"
+	}
 	a.mu.Unlock()
 	return nil
 }
@@ -512,6 +520,16 @@ func (a *App) Logout() error {
 // ---- HTTP API（WebView/浏览器与后端的桥） ----
 
 func (a *App) ServeAPI(ln net.Listener, mux *http.ServeMux) error {
+	mux.HandleFunc("/api/proxy/conflicts", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		a.mu.Lock()
+		addr := a.proxyAddr
+		a.mu.Unlock()
+		writeJSON(w, map[string]interface{}{"apps": otherProxyApps(addr)})
+	})
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, a.snapshot())
 	})

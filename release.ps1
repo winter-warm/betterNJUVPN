@@ -11,7 +11,7 @@ try {
     if ((Test-Path -LiteralPath (Join-Path $stage 'config.json')) -or (Test-Path -LiteralPath (Join-Path $stage 'data'))) {
         throw '发布目录不能包含本机配置或数据'
     }
-    $version = '0.1.1'
+    $version = '0.1.2'
     $zip = Join-Path $releaseDir "betterNJUVPN-$version-portable-win-x64.zip"
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
     Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal

@@ -44,13 +44,15 @@
   <div class="traffic" aria-label="本地代理流量"><span>↑ 实时上传 <strong id="uploadSpeed">0 B/s</strong></span><span>↓ 实时下载 <strong id="downloadSpeed">0 B/s</strong></span><span>累计上传 <strong id="uploadTotal">0 B</strong></span><span>累计下载 <strong id="downloadTotal">0 B</strong></span><small>统计本次程序运行期间经过本地代理的流量；虚拟网卡直连流量不计入</small></div>
   <div class="footer">关闭窗口即退出并恢复原系统代理设置 · 浏览器需信任本地 CA</div>
 </main>
-<div class="mask" id="smsMask"><div class="modal"><h3>短信验证</h3><p>学校网关已接受发送请求，绑定号码：<strong id="phone">查询中</strong>。短信可能延迟；未收到时可在 60 秒后手动重发。</p><input id="smsCode" maxlength="6" inputmode="numeric" placeholder="验证码"><div class="modal-actions"><button class="outline" onclick="resendSms()">重发短信</button><button class="outline" onclick="closeSms()">稍后输入</button><button class="primary" onclick="doSms()">确认</button></div></div></div>
+<div class="mask" id="smsMask"><div class="modal"><h3>短信验证</h3><p>学校网关已接受发送请求，绑定号码：<strong id="phone">查询中</strong>。短信可能延迟；未收到时可在 60 秒后手动重发。</p><input id="smsCode" type="text" maxlength="6" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="验证码"><div class="modal-actions"><button class="outline" onclick="resendSms()">重发短信</button><button class="outline" onclick="closeSms()">稍后输入</button><button class="primary" onclick="doSms()">确认</button></div></div></div>
+<div class="mask" id="proxyConflictMask"><div class="modal"><h3>检测到其他代理应用运行</h3><p><span id="proxyConflictApps"></span> 可能造成异常卡顿。建议先关闭其他代理，再开启本程序代理。</p><div class="modal-actions"><button class="outline" onclick="resolveProxyWarning(false)">取消</button><button class="primary" onclick="resolveProxyWarning(true)">继续开启</button></div></div></div>
 <div class="mask" id="caMask"><div class="modal"><h3>信任本地 HTTPS 证书</h3><p>首次访问校园 HTTPS 网页前，需要由当前 Windows 用户信任本程序在本机生成的证书。选择信任后，刷新浏览器页面即可；也可以稍后从账户区域操作。</p><div class="modal-actions"><button class="outline" onclick="closeCAModal()">稍后</button><button class="primary" onclick="trustCA()">信任证书</button></div></div></div>
 <script>
 let state=null,autoTried=false,initialised=false,lastState="",networkMode="system";
 let caPromptShown=false;
 let trafficSample=null;
-let loginBusy=false,smsBusy=false;
+let loginBusy=false,smsBusy=false,tunToggleBusy=false;
+let proxyWarningResolve=null;
 const $=id=>document.getElementById(id);
 function formatBytes(n){if(n<1024)return Math.round(n)+" B";const units=["KB","MB","GB","TB"];let i=-1;do{n/=1024;i++}while(n>=1024&&i<units.length-1);return n.toFixed(n>=100?0:n>=10?1:2)+" "+units[i]}
 function renderTraffic(s){const now=performance.now(),up=Number(s.uploadBytes)||0,down=Number(s.downloadBytes)||0;$("uploadTotal").textContent=formatBytes(up);$("downloadTotal").textContent=formatBytes(down);if(!trafficSample||up<trafficSample.up||down<trafficSample.down){trafficSample={now,up,down};return}const seconds=(now-trafficSample.now)/1000;if(seconds<0.9)return;$("uploadSpeed").textContent=formatBytes(Math.max(0,(up-trafficSample.up)/seconds))+"/s";$("downloadSpeed").textContent=formatBytes(Math.max(0,(down-trafficSample.down)/seconds))+"/s";trafficSample={now,up,down}}
@@ -91,18 +93,21 @@ async function resendSms(){try{await api("/api/sms/resend",{});await poll()}catc
 function showSms(phone){$("phone").textContent=phone||"绑定手机";$("smsMask").classList.add("show");$("smsCode").value="";$("smsCode").focus()}
 function closeSms(){$("smsMask").classList.remove("show")}
 async function doLogout(){try{await api("/api/logout",{});$("password").value="";await poll()}catch(error){showError(error)}}
-async function toggleTun(){if(state?.tunBusy)return;try{await api("/api/tun",{action:state.tunOn?"stop":"start"});await poll()}catch(error){showError(error)}}
+async function confirmProxyWarning(){const response=await fetch("/api/proxy/conflicts",{cache:"no-store"});if(!response.ok)throw new Error("检查其他代理失败");const {apps}=await response.json();if(!apps?.length)return true;$("proxyConflictApps").textContent=apps.join("、")+" 正在运行，";$("proxyConflictMask").classList.add("show");return new Promise(resolve=>{proxyWarningResolve=resolve})}
+function resolveProxyWarning(continueOpening){$("proxyConflictMask").classList.remove("show");const resolve=proxyWarningResolve;proxyWarningResolve=null;if(resolve)resolve(continueOpening)}
+async function toggleTun(){if(state?.tunBusy||tunToggleBusy)return;tunToggleBusy=true;try{if(!state.tunOn&&!(await confirmProxyWarning()))return;await api("/api/tun",{action:state.tunOn?"stop":"start"});await poll()}catch(error){showError(error)}finally{tunToggleBusy=false}}
 function closeCAModal(){$("caMask").classList.remove("show")}
 async function trustCA(){try{$("trustCaBtn").disabled=true;await api("/api/ca/trust",{});closeCAModal();await poll()}catch(error){closeCAModal();showError(error)}finally{$("trustCaBtn").disabled=false}}
 function selectNetworkMode(mode){networkMode=mode;if(state)render(state)}
 function toggleActiveNetwork(){if(networkMode==="tun")toggleTun();else toggleSystem()}
 let settingsBusy=false;
-async function applySettings(systemOn,mode,port){if(settingsBusy)return;settingsBusy=true;try{await api("/api/settings",{port:Number(port),systemProxyOn:systemOn,proxyMode:mode});await poll()}catch(error){showError(error)}finally{settingsBusy=false}}
+async function applySettings(systemOn,mode,port){if(settingsBusy)return;settingsBusy=true;try{if(systemOn&&mode!=="direct"&&(!state.systemProxyOn||!state.proxyOn||state.proxyMode==="direct")&&!(await confirmProxyWarning()))return;await api("/api/settings",{port:Number(port),systemProxyOn:systemOn,proxyMode:mode});await poll()}catch(error){showError(error)}finally{settingsBusy=false}}
 function toggleSystem(){const active=state.systemProxyOn&&state.proxyOn&&!state.tunOn&&state.proxyMode!=="direct";applySettings(!active,!active&&state.proxyMode==="direct"?"rule":state.proxyMode,$("proxyPort").value)}
 function setMode(mode){applySettings(state.systemProxyOn,mode,$("proxyPort").value)}
 function saveSettings(){applySettings(state.systemProxyOn,state.proxyMode,$("proxyPort").value)}
 async function doQuit(){try{await api("/api/quit",{});setTimeout(()=>window.close(),250)}catch(error){showError(error)}}
 $("password").addEventListener("keydown",event=>{if(event.key==="Enter")doLogin(false)});$("smsCode").addEventListener("keydown",event=>{if(event.key==="Enter")doSms()});
+$("smsCode").name="sms-code-"+Math.random().toString(36).slice(2);
 setInterval(poll,350);poll();
 </script>
 </body>
