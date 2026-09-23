@@ -1,9 +1,11 @@
 #requires -Version 7
+param([string]$PackageName = 'betterNJUVPN')
 $ErrorActionPreference = 'Stop'
+if ($PackageName -notmatch '^betterNJUVPN(?:-[0-9]+(?:\.[0-9]+){2})?$') { throw '分发目录名称无效' }
 $root = $PSScriptRoot
 $env:GOCACHE = Join-Path $root '.gocache'
 $distRoot = Join-Path $root 'dist\portable'
-$package = Join-Path $distRoot 'betterNJUVPN'
+$package = Join-Path $distRoot $PackageName
 $stage = Join-Path $distRoot ('.stage-' + [guid]::NewGuid().ToString('N'))
 
 Push-Location $root
@@ -20,7 +22,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'assets\betterNJUVPN.ico') -Destination (Join-Path $stage 'assets')
 
     if (Test-Path -LiteralPath $package) {
-        if ([IO.Path]::GetFullPath($package) -ne [IO.Path]::GetFullPath((Join-Path $root 'dist\portable\betterNJUVPN'))) { throw '分发目录路径异常' }
+        if (-not [string]::Equals([IO.Path]::GetFullPath((Split-Path $package -Parent)), [IO.Path]::GetFullPath($distRoot), [StringComparison]::OrdinalIgnoreCase)) { throw '分发目录路径异常' }
         $privateItems = @('config.json', 'data') | Where-Object { Test-Path -LiteralPath (Join-Path $package $_) }
         if ($privateItems.Count -gt 0) {
             $backup = Join-Path $root ('.local\previous-package-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))

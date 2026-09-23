@@ -35,6 +35,7 @@ func newWebView(uiURL string) (webViewHandle, error) {
 	}
 	wv.SetTitle("betterNJUVPN · 南京大学 Web VPN")
 	wv.SetSize(1100, 760, 0)
+	maximizeWindow(wv.Window())
 	wv.Navigate(uiURL)
 	return webViewHandle{w: wv}, nil
 }

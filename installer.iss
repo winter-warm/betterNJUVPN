@@ -1,4 +1,7 @@
-#define AppVersion "0.1.2"
+#define AppVersion "0.1.3"
+#ifndef SourceDir
+#define SourceDir "dist\portable\betterNJUVPN"
+#endif
 
 [Setup]
 AppId={{A68C05AD-1DBD-4595-A92A-5B02787874C0}
@@ -28,14 +31,14 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Name: "trustca"; Description: "信任本程序生成的本地 HTTPS 证书（当前用户）"; GroupDescription: "附加选项："
 
 [Files]
-Source: "dist\portable\betterNJUVPN\betterNJUVPN.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\betterNJUVPN-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\RELEASE_NOTES.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\assets\betterNJUVPN.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\tools\mihomo\mihomo-windows-amd64-compatible.exe"; DestDir: "{app}\tools\mihomo"; Flags: ignoreversion
-Source: "dist\portable\betterNJUVPN\tools\mihomo\LICENSE"; DestDir: "{app}\tools\mihomo"; Flags: ignoreversion
+Source: "{#SourceDir}\betterNJUVPN.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\betterNJUVPN-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\RELEASE_NOTES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\assets\betterNJUVPN.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "{#SourceDir}\tools\mihomo\mihomo-windows-amd64-compatible.exe"; DestDir: "{app}\tools\mihomo"; Flags: ignoreversion
+Source: "{#SourceDir}\tools\mihomo\LICENSE"; DestDir: "{app}\tools\mihomo"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\betterNJUVPN"; Filename: "{app}\betterNJUVPN.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\betterNJUVPN.ico"
